@@ -16,7 +16,7 @@ def post_infer_callback(completion_info, request_id, output_queue, bindings):
     output = bindings.output().get_buffer()
     output_queue.put({"id": request_id, "output": output})
 
-timeout_ms = 1000
+timeout_ms = 2000
 
 
 def infer(hef_path, input_queue, output_queue, should_use_multi_process_service=True):
@@ -62,7 +62,7 @@ def infer(hef_path, input_queue, output_queue, should_use_multi_process_service=
             for job in jobs:
                 job.wait(timeout_ms)
 
-            print("All jobs completed")
+            print(f"All jobs completed, closing {multiprocessing.current_process().name}")
             # close the receive thread
             output_queue.put(None)
 
