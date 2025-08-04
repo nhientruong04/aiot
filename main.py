@@ -1,3 +1,7 @@
+import time
+import os
+import datetime
+import cv2
 from itertools import count
 from functools import partial
 from multiprocessing import Process, Queue
@@ -15,13 +19,28 @@ def main():
     stop_event = Event()
     request_manager = RequestManager(info_callback, teacher_mean, teacher_std)
 
-    requests = [np.squeeze(item).astype(np.float32) for item in np.random.randint(low=0, high=255, size=(3, 256, 256, 3))]
-    request_queue = Queue()
-    for item in requests:
-        request_queue.put(item)
+    # requests = [np.squeeze(item).astype(np.float32) for item in np.random.randint(low=0, high=255, size=(3, 256, 256, 3))]
+    # request_queue = Queue()
+    # for item in requests:
+    #     request_queue.put(item)
+    #
+    # request_queue.put(None)
     # this sentinel only serves to ensure all requests is sent for processing before closing the send thread
     # hence could be removed in production phase
+
+    # benchmark
+    request_queue = Queue()
+    request_num = 0
+    root_dir = "/home/nhien/aiot/data/images"
+
+    for image_path in os.listdir(root_dir):
+        image = cv2.imread(os.path.join(root_dir, image_path))
+        image = cv2.resize(image, (256, 256)).astype(np.float32)
+        request_queue.put(image)
+        request_num += 1
+
     request_queue.put(None)
+    # end benchmark
 
     student_input_queue = Queue()
     student_output_queue = Queue()
@@ -42,6 +61,9 @@ def main():
         Thread(target=receive_fn, name="[Receive Thread] Student", args=(student_output_queue,)),
     ]
 
+    print(f"Starting all processes and threads at {datetime.time()}...")
+    start_time = time.time()
+
     for worker in process_pool:
         worker.start()
 
@@ -54,11 +76,13 @@ def main():
         worker.join()
 
     for worker in process_pool:
-        print(f"Terminating {worker.name}...")
         worker.join()
 
-    # print(request_map.keys())
-    # print(request_map[0])
+    duration = time.time() - start_time
+    print(f"System ended in {duration:.2f} seconds.")
+    # benchmark
+    print(f"Processed on average {request_num/duration:.2f} requests/sec.")
+    # end benchmark
 
 def send(request_queue, stop_event, student_input_queue, teacher_input_queue):
     counter = count(start=0)
@@ -67,7 +91,7 @@ def send(request_queue, stop_event, student_input_queue, teacher_input_queue):
     while True:
         input = request_queue.get(block=True)
 
-        if (input is None):
+        if input is None:
             break
 
         request = {"id": next(counter), "input": input.copy()}
@@ -94,7 +118,7 @@ def receive(output_queue, stop_event, request_manager):
         output = output["output"]
 
         request_manager.push(request_id, output, model_name)
-    
+
     print(f"{threading.current_thread().name} closed")
 
 def info_callback():
