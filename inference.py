@@ -34,6 +34,7 @@ def infer(hef_path, input_queue, output_queue, should_use_multi_process_service=
 
         infer_model.input().set_format_type(FormatType.FLOAT32)
         infer_model.output().set_format_type(FormatType.FLOAT32)
+        infer_model.set_batch_size(1)
 
         # Once the infer model is set, configure the infer model
         with infer_model.configure() as configured_infer_model:
@@ -50,7 +51,7 @@ def infer(hef_path, input_queue, output_queue, should_use_multi_process_service=
                 # Create bindings for it and set buffers
                 bindings = configured_infer_model.create_bindings()
                 bindings.input().set_buffer(input)
-                bindings.output().set_buffer(np.empty(infer_model.output().shape).astype(np.float32))
+                bindings.output().set_buffer(np.empty(infer_model.output().shape, dtype=np.float32))
 
                 configured_infer_model.wait_for_async_ready(timeout_ms=1000)
 
@@ -62,9 +63,9 @@ def infer(hef_path, input_queue, output_queue, should_use_multi_process_service=
             for job in jobs:
                 job.wait(timeout_ms)
 
-            print(f"All jobs completed, closing {multiprocessing.current_process().name}")
-            # close the receive thread
-            output_queue.put(None)
+    print(f"All jobs completed in {multiprocessing.current_process().name}")
+    # close the receive thread
+    output_queue.put(None)
 
 if __name__ == "__main__":
     dataset = np.random.randint(low=0, high=255, size=(2, 256, 256, 3)).astype(np.float32)
