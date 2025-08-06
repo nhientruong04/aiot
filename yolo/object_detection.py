@@ -13,7 +13,9 @@ import cv2
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from common.infer_model import HailoInfer
-from common.toolbox import init_input_source, get_labels, load_json_file, preprocess, visualize, FrameRateTracker, extract_objects
+from common.toolbox import init_input_source, get_labels, load_json_file, preprocess, FrameRateTracker, extract_objects
+from common.tracker.byte_tracker import BYTETracker
+from visualize import visualize
 from postprocess import inference_result_handler
 
 
@@ -108,7 +110,7 @@ def parse_args() -> argparse.Namespace:
 
 def main(net, input, labels, batch_size=1, output_dir=None,
           save_stream_output=False, resolution="sd",
-          enable_tracking=False, show_fps=False) -> None:
+          enable_tracking=True, show_fps=True) -> None:
     """
     Initialize queues, HailoAsyncInference instance, and run the inference.
     """
@@ -125,14 +127,13 @@ def main(net, input, labels, batch_size=1, output_dir=None,
     if enable_tracking:
         # load tracker config from config_data
         tracker_config = config_data.get("visualization_params", {}).get("tracker", {})
-        # tracker = BYTETracker(SimpleNamespace(**tracker_config))
+        tracker = BYTETracker(SimpleNamespace(**tracker_config))
 
     input_queue = queue.Queue()
     output_queue = queue.Queue()
 
     post_process_callback_fn = partial(
-        inference_result_handler, labels=labels,
-        config_data=config_data, tracker=tracker
+        inference_result_handler, config_data=config_data
     )
 
     hailo_inference = HailoInfer(net, batch_size)
@@ -141,17 +142,17 @@ def main(net, input, labels, batch_size=1, output_dir=None,
     preprocess_thread = threading.Thread(
         target=preprocess, args=(images, cap, batch_size, input_queue, width, height)
     )
-    # postprocess_thread = threading.Thread(
-    #     target=visualize, args=(output_queue, cap, save_stream_output,
-    #                             output_dir, post_process_callback_fn, fps_tracker)
-    # )
+    visualize_thread = threading.Thread(
+        target=visualize, args=(output_queue, cap, save_stream_output, output_dir,
+                                labels, tracker, fps_tracker)
+    )
 
     infer_thread = threading.Thread(
         target=infer, args=(hailo_inference, input_queue, output_queue, post_process_callback_fn)
     )
 
     preprocess_thread.start()
-    # postprocess_thread.start()
+    visualize_thread.start()
     infer_thread.start()
 
     if show_fps:
@@ -160,7 +161,7 @@ def main(net, input, labels, batch_size=1, output_dir=None,
     preprocess_thread.join()
     infer_thread.join()
     output_queue.put(None)  # Signal process thread to exit
-    # postprocess_thread.join()
+    visualize_thread.join()
 
     if show_fps:
         logger.debug(fps_tracker.frame_rate_summary())
@@ -238,17 +239,20 @@ def inference_callback(
                     for name in bindings._output_names
                 }
             processed_dets = postprocess_callback(input_batch[i], result)
+
             # this should only be called when anomaly detection is needed, not in this output callback
-            if processed_dets['num_detections'] != 0:
-                extracted_objects = extract_objects(input_batch[i], [processed_dets['detection_boxes'][0]])
-                cv2.imwrite("output.png", extracted_objects[0])
+            # if processed_dets['num_detections'] != 0:
+            #     extracted_objects = extract_objects(input_batch[i], [processed_dets['detection_boxes'][0]])
+            #     cv2.imwrite("output.png", extracted_objects[0])
 
             output_queue.put((input_batch[i], processed_dets))
 
 
 if __name__ == "__main__":
     net = '../../data/yolov6n.hef'
-    img_path  = '../../data/test_img.png'
+    # img_path  = '../../data/test_img.png'
+    video_path = '../../data/test_video.mp4'
     labels = str(Path(__file__).parent.parent / "common" / "coco.txt")
+    output_dir = '../output'
 
-    main(net, img_path, labels)
+    main(net=net, input=video_path, labels=labels, output_dir=output_dir, save_stream_output=True)
