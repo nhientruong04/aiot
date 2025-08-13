@@ -1,65 +1,57 @@
 import numpy as np
 from multiprocessing import Queue
 from tqdm import tqdm
-from loguru import logger
 from typing import List
-from hailo_platform import VDevice, HailoSchedulingAlgorithm, FormatType
+from common.infer_model import HailoInfer
+from typing import Optional
 
 # WARNING: This is a very very unoptimized piece
-def teacher_normalization(teacher_hef_path: str, dataset_path: str):
+def teacher_normalization(teacher_hef_path: str, dataset_path: str,
+                          save_path: Optional[str] = None):
     dataset = np.load(dataset_path)
     assert dataset.dtype == np.uint8, f'Expected uint8, got {dataset.dtype}'
     items: List = np.split(dataset, dataset.shape[0], axis=0)
 
-    params = VDevice.create_params()
-    params.scheduling_algorithm = HailoSchedulingAlgorithm.ROUND_ROBIN
-    with VDevice(params) as vdevice:
-        infer_model = vdevice.create_infer_model(teacher_hef_path)
+    teacher = HailoInfer('../data/teacher.hef', input_type='UINT8', output_type='FLOAT32')
 
-        infer_model.input().set_format_type(FormatType.UINT8)
-        infer_model.output().set_format_type(FormatType.FLOAT32)
+    # teacher_mean
+    output_means = list()
 
+    for item in tqdm(items, desc='Calculating teacher\'s channels mean.'):
+        output = teacher.run_sync(item)
+        output_mean = np.mean(output, axis=(0,1))
+        output_means.append(output_mean)
 
-        with infer_model.configure() as teacher:
+    channel_mean = np.mean(np.stack(output_means, axis=0), axis=0)
+    channel_mean = channel_mean[None, None, :]
 
-            # teacher_mean
-            output_means = list()
-            logger.info("Calculating teacher's channels mean.")
-            for item in tqdm(items):
-                bindings = teacher.create_bindings()
-                bindings.input().set_buffer(item)
-                bindings.output().set_buffer(np.empty(infer_model.output().shape, dtype=np.float32))
+    # teacher_std
+    output_stds = list()
 
-                teacher.run([bindings], 10000)
+    for item in tqdm(items, desc='Calculating teacher\'s channels std.'):
+        output = teacher.run_sync(item)
+        distance = (output - channel_mean) ** 2
+        distance_mean = np.mean(distance, axis=(0,1))
+        output_stds.append(distance_mean)
 
-                output = bindings.output().get_buffer()
-                output_mean = np.mean(output, axis=(0,1))
-                output_means.append(output_mean)
+    channel_std = np.mean(np.stack(output_stds, axis=0), axis=0)
+    channel_std = channel_std[None, None, :]
 
-            channel_mean = np.mean(np.stack(output_means, axis=0), axis=0)
-            channel_mean = channel_mean[None, None, :]
-            print(channel_mean.shape)
+    teacher.close()
 
-            # teacher_std
-            output_stds = list()
-            logger.info('Calculating teacher\'s channels std.')
-            for item in tqdm(items):
-                bindings = teacher.create_bindings()
-                bindings.input().set_buffer(item)
-                bindings.output().set_buffer(np.empty(infer_model.output().shape, dtype=np.float32))
+    if save_path is not None:
+        _, ext = save_path.split('.')
+        file_path = None
+        if ext == 'npz':
+            file_path = save_path
+        else:
+            file_path = f'{save_path}.npz'
 
-                teacher.run([bindings], 10000)
-
-                output = bindings.output().get_buffer()
-                distance = (output - channel_mean) ** 2
-                distance_mean = np.mean(distance, axis=(0,1))
-                output_stds.append(distance_mean)
-
-            channel_std = np.mean(np.stack(output_stds, axis=0), axis=0)
-            channel_std = channel_std[None, None, :]
-            print(channel_std.shape)
+        print(f'Saving to {file_path}.')
+        np.savez(file_path, channel_mean=channel_mean, channel_std=channel_std)
 
     return channel_mean, channel_std
 
 if __name__ == "__main__":
-    teacher_normalization('../data/teacher.hef', '../data/v3_train_dataset.npy')
+    channel_mean, channel_std = teacher_normalization('../data/teacher.hef', '../data/v3_train_dataset.npy',
+                                                      'teacher_norm.npz')
