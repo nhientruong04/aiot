@@ -114,6 +114,22 @@ class HailoInfer:
         """
         return self.hef.get_input_vstream_infos()[0].shape  # Assumes one input
 
+    def run_sync(self, input: np.array) -> np.array:
+        """
+        Run a synchronous inference job on one input.
+
+        Args:
+            input (np.ndarray): A preprocessed input.
+
+        Returns:
+            np.array: The computed infer result(s).
+        """
+        bindings_list = self.create_bindings(self.configured_model, [input])
+
+        self.configured_model.run(bindings_list, 10000)
+        output = bindings_list[0].output().get_buffer()
+
+        return output
 
     def run(self, input_batch: List[np.ndarray], inference_callback_fn) -> object:
         """
