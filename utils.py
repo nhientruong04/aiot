@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 from datetime import datetime
 from sklearn.metrics import precision_recall_curve, average_precision_score, roc_curve, roc_auc_score
 from matplotlib import pyplot as plt
+import pandas as pd
 
 # WARNING: This is a very very unoptimized piece
 def teacher_normalization(teacher: HailoInfer, dataset_path: str):
@@ -94,9 +95,10 @@ def prepare_specs(teacher_hef: str, student_hef: str, channel_norm_file: str,
 
 
 class AD_Evaluation():
-    def __init__(self, y_true: np.array, y_score: np.array, plot_dir: str = datetime.now().strftime('%Y-%m-%d-%H')):
+    def __init__(self, y_true: np.array, y_score: np.array, plot_dir: Optional[str] = None):
         self.y_true = y_true
         self.y_score = y_score
+        plot_dir = plot_dir if plot_dir is not None else datetime.now().strftime('%Y-%m-%d-%H')
         self.plot_dir = os.path.join('.', 'runs', plot_dir)
         self.__post_init__()
 
@@ -147,7 +149,7 @@ class AD_Evaluation():
 
         return fig
 
-    def evaluate(self, show: bool = False):
+    def evaluate(self, show: bool = False) -> dict:
         roc_fig = self.visualize_roc()
         pr_fig = self.visualize_pr_curve()
 
@@ -161,6 +163,16 @@ class AD_Evaluation():
         plt.close(roc_fig)
         plt.close(pr_fig)
 
+        metrics = {
+            'AUC': self.auc,
+            'AP': self.ap,
+            'Youden\'s J threshold': self.J_threshold
+        }
+
+        df = pd.DataFrame(metrics.items(), columns=["Metric", "Value"])
+        print(df.to_string(index=False))
+
+        return metrics
 
 if __name__ == "__main__":
     evaluation_model = AD_Evaluation(np.random.randint(0, 2, 10), np.random.random(10))

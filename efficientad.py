@@ -6,16 +6,14 @@ from common.infer_model import HailoInfer
 from typing import Optional, Tuple
 from dataset import Dataset, DataLoader
 from PIL import Image
-from sklearn.metrics import roc_curve, roc_auc_score
-import pandas as pd
-from matplotlib import pyplot as plt
+from utils import AD_Evaluation
 
 
 def test(test_loader: DataLoader, teacher: HailoInfer, student: HailoInfer, autoencoder: HailoInfer,
          teacher_mean: np.float32, teacher_std: np.float32, q_st_start: Optional[np.array] = None,
          q_st_end: Optional[np.array] = None, q_ae_start: Optional[np.array] = None,
          q_ae_end: Optional[np.array] = None, test_output_dir: Optional[str] = None,
-         plot_path: str = 'output.png', desc='Running inference'):
+         plot_dir: Optional[str] = None, desc='Running inference'):
     assert test_loader.batch_size == 1
 
     y_true = []
@@ -45,26 +43,10 @@ def test(test_loader: DataLoader, teacher: HailoInfer, student: HailoInfer, auto
         y_true.append(y_true_image)
         y_score.append(y_score_image)
 
-    fpr, tpr, thresholds = roc_curve(y_true, y_score)
-    auc = roc_auc_score(y_true=y_true, y_score=y_score)
+    evaluation_model = AD_Evaluation(y_true=y_true, y_score=y_score, plot_dir=plot_dir)
+    metrics = evaluation_model.evaluate()
 
-    plt.figure(figsize=(6,6))
-    plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC curve (AUC = {auc:.3f})')
-    plt.plot([0,1], [0,1], color='gray', linestyle='--', label='Random guess')
-    plt.xlabel('False Positive Rate (FPR)')
-    plt.ylabel('True Positive Rate (TPR)')
-    plt.title('Receiver Operating Characteristic (ROC)')
-    plt.legend(loc="lower right")
-    plt.grid(alpha=0.3)
-    plt.savefig(plot_path)
-
-    metrics = {
-        'AUC': auc
-    }
-    df = pd.DataFrame(metrics.items(), columns=["Metric", "Value"])
-    print(df.to_string(index=False))
-
-    return auc, fpr, tpr, thresholds
+    return metrics
 
 
 def map_normalization(teacher: HailoInfer, student: HailoInfer, autoencoder: HailoInfer,
@@ -169,8 +151,7 @@ if __name__ == "__main__":
     specs_file = np.load('../models/orig_bottle/specs.npz')
     specs = {key: specs_file[key] for key in specs_file.files}
 
-    auc = test(test_loader, teacher, student, autoencoder, **specs)
-    print(auc)
+    metrics = test(test_loader, teacher, student, autoencoder, plot_dir='test', **specs)
 
     teacher.close()
     student.close()
