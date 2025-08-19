@@ -6,22 +6,35 @@ from multiprocessing import Queue
 import os
 from loguru import logger
 
-OUTPUT_DIR = "output_ad"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+OUTPUT_DIR = None
+# OUTPUT_DIR = "output_ad"
+# os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 class RequestManager:
-    def __init__(self, request_processed_callback, teacher_input_queue: Queue, student_input_queue: Queue,
-                 teacher_mean, teacher_std, input_size: int, q_st_start=2.9, q_st_end=3.1):
-        self.teacher_mean = teacher_mean
-        self.teacher_std = teacher_std
-        self.q_st_start = q_st_start
-        self.q_st_end = q_st_end
+    # FIX: change all specs to rely on computed npz file instead of manual argument feed
+    def __init__(self, request_processed_callback, teacher_input_queue: Queue,
+                 student_input_queue: Queue, specs_path: str, input_size: int):
         self.processed_callback = request_processed_callback
         self.processed_ids = list()
         self.input_queues = [student_input_queue, teacher_input_queue]
+        self.input_size = input_size
         # request map
         self._map = dict()
         self._lock = Lock()
+
+        self._load_specs(specs_path)
+
+    def _load_specs(self, specs_path: str) -> None:
+        assert os.path.isfile(specs_path), f'File {specs_path} does not exist'
+        specs = np.load(specs_path)
+
+        # WARNING: fix teacher_mean and teacher_std naming consistency
+        self.teacher_mean = specs.get('channel_mean', None)
+        self.teacher_std = specs.get('channel_std', None)
+        self.q_st_start = specs.get('q_st_start', None)
+        self.q_st_end = specs.get('q_st_end', None)
+        self.q_ae_start = specs.get('q_ae_start', None)
+        self.q_ae_end = specs.get('q_ae_end', None)
 
     def id_exist(self, request_id: int) -> bool:
         if request_id in self._map.keys():
@@ -80,7 +93,7 @@ class RequestManager:
 
         self._map[request_id] = {"teacher": None, "student": None}
 
-        preprocessed_input = self._preprocess(input, 256)
+        preprocessed_input = self._preprocess(input, self.input_size)
         for input_queue in self.input_queues:
             request = {"id": request_id,
                        "input": preprocessed_input.copy()
@@ -90,6 +103,9 @@ class RequestManager:
 
     def push(self, request_id, output, model_name):
         assert model_name in ["teacher", "student"], f"The model_name should be either 'teacher' or 'student', not {model_name}"
+
+        if request_id not in self._map.keys():
+            raise Exception(f"No request was created for request_id {request_id}")
 
         with self._lock:
             # check for racing by threads
@@ -135,3 +151,20 @@ class RequestManager:
     def close(self):
         for input_queue in self.input_queues:
             input_queue.put(None)
+
+if __name__ == "__main__":
+    def dummy_callback():
+        pass
+
+    student_input_queue = Queue()
+    teacher_input_queue = Queue()
+
+    request_manager = RequestManager(dummy_callback, teacher_input_queue, student_input_queue, 'specs.npz', 256)
+
+    image = np.random.randint(0,255, (900, 700, 3), dtype=np.uint8)
+    request_manager.create_request(0, image)
+
+    request_manager.push(0, np.random.random((56, 56, 384)), "student")
+    request_manager.push(0, np.random.random((56, 56, 384)), "teacher")
+
+    print(request_manager.processed_ids)
