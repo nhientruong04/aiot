@@ -9,7 +9,7 @@ from common.toolbox import id_to_color
 # Visualization
 ####################################################################
 
-def visualize(output_queue: queue.Queue, cap: cv2.VideoCapture, save_stream_output: bool, output_dir: str, labels: List,
+def visualize(output_queue: queue.Queue, cap: cv2.VideoCapture, save_stream_output: bool, output_dir: str, labels: List, quiet: bool = True,
               tracker: Optional["BYTETracker"] = None, fps_tracker: Optional["FrameRateTracker"] = None, side_by_side: bool = False) -> None:
     """
     Process and visualize the output results.
@@ -20,6 +20,7 @@ def visualize(output_queue: queue.Queue, cap: cv2.VideoCapture, save_stream_outp
         save_stream_output (bool): Whether to save output video stream to disk.
         output_dir (str): Directory where output video will be saved.
         labels (list): List of class labels.
+        quiet (bool): choose whether to show run real-time with cv2 window. Default True to make no window.
         tracker (BYTETracker, optional): ByteTrack tracker instance.
         fps_tracker (FrameRateTracker, optional): Instance of a frame rate tracking class to monitor and log FPS.
         side_by_side (bool): If True, assumes callback generates a side-by-side comparison (original vs. processed),
@@ -30,10 +31,11 @@ def visualize(output_queue: queue.Queue, cap: cv2.VideoCapture, save_stream_outp
     out = None
 
     if cap is not None:
-        #Create a named window
-        cv2.namedWindow("Output", cv2.WND_PROP_FULLSCREEN)
-        #Set the window to fullscreen
-        cv2.setWindowProperty("Output", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        if not quiet:
+            #Create a named window
+            cv2.namedWindow("Output", cv2.WND_PROP_FULLSCREEN)
+            #Set the window to fullscreen
+            cv2.setWindowProperty("Output", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
         if save_stream_output:
             # Read video dimensions
@@ -69,8 +71,9 @@ def visualize(output_queue: queue.Queue, cap: cv2.VideoCapture, save_stream_outp
             fps_tracker.increment()
 
         if cap is not None:
-            # Display output
-            cv2.imshow("Output", frame_with_detections)
+            if not quiet:
+                # Display output
+                cv2.imshow("Output", frame_with_detections)
             if save_stream_output:
                 out.write(frame_with_detections)
         else:
@@ -84,6 +87,8 @@ def visualize(output_queue: queue.Queue, cap: cv2.VideoCapture, save_stream_outp
             if save_stream_output:
                 out.release()  # Release the VideoWriter object
             cap.release()
+            # if not quiet:
+
             cv2.destroyAllWindows()
             break
 

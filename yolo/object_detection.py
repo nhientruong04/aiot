@@ -144,7 +144,7 @@ def main(net, input, labels, batch_size=1, output_dir=None,
     )
     visualize_thread = threading.Thread(
         target=visualize, args=(output_queue, cap, save_stream_output, output_dir,
-                                labels, tracker, fps_tracker)
+                                labels, True, tracker, fps_tracker)
     )
 
     infer_thread = threading.Thread(
@@ -250,8 +250,9 @@ def inference_callback(
 
 if __name__ == "__main__":
     net = '../../data/yolov6n.hef'
-    # img_path  = '../../data/test_img.png'
-    video_path = '../../data/test_video.mp4'
+    # img_path  = '../../data/cube_test.jpg'
+    video_path = '../../data/croissant.mp4'
+    # video_path = '../../data/test_video.mp4'
     labels = str(Path(__file__).parent.parent / "common" / "coco.txt")
     output_dir = '../output'
 
