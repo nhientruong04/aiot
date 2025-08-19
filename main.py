@@ -11,9 +11,70 @@ import numpy as np
 from inference import infer
 from request_manager import RequestManager
 import threading
+from loguru import logger
+from common.infer_model import HailoInfer
 
 teacher_mean = 1
 teacher_std = 1.2929
+
+def infer(input_queue: threading.Queue, output_queue: threading.Queue) -> None:
+    stop_event = Event()
+    request_manager = RequestManager(info_callback, teacher_mean, teacher_std)
+
+    student_input_queue = Queue()
+    student_output_queue = Queue()
+    teacher_input_queue = Queue()
+    teacher_output_queue = Queue()
+
+    receive_fn = partial(receive, stop_event=stop_event, request_manager=request_manager)
+
+    process_pool = [
+        Process(target=infer, name="[Model Process] Student", args=("/home/nhien/aiot/data/student.hef", student_input_queue, student_output_queue)),
+        Process(target=infer, name="[Model Process] Teacher", args=("/home/nhien/aiot/data/teacher.hef", teacher_input_queue, teacher_output_queue))
+    ]
+
+    thread_pool = [
+        Thread(target=receive_fn, name="[Receive Thread] Teacher", args=(teacher_output_queue,)),
+        Thread(target=receive_fn, name="[Receive Thread] Student", args=(student_output_queue,)),
+    ]
+
+    print(f"Starting all processes and threads at {datetime.time()}...")
+    start_time = time.time()
+
+    for worker in process_pool:
+        worker.start()
+
+    for worker in thread_pool:
+        worker.start()
+
+    # while not stop_event:
+    while True:
+        input = request_queue.get(block=True)
+
+        if input is None:
+            break
+
+        request = {"id": next(counter), "input": input.copy()}
+
+        student_input_queue.put(request.copy())
+        teacher_input_queue.put(request.copy())
+
+    student_input_queue.put(None)
+    teacher_input_queue.put(None)
+
+    stop_event.set()
+
+    for worker in thread_pool:
+        worker.join()
+
+    for worker in process_pool:
+        worker.join()
+
+    duration = time.time() - start_time
+    print(f"System ended in {duration:.2f} seconds.")
+    # benchmark
+    print(f"Processed on average {request_num/duration:.2f} requests/sec.")
+    # end benchmark
 
 def main():
     stop_event = Event()

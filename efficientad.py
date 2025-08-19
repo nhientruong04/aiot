@@ -36,6 +36,7 @@ def test(test_loader: DataLoader, teacher: HailoInfer, student: HailoInfer, auto
                 os.makedirs(os.path.join(test_output_dir, target))
             file = os.path.join(
                 test_output_dir, target, img_nm + '.tiff')
+            # BUG: no tiffile defined
             tifffile.imwrite(file, map_combined)
 
         y_true_image = 0 if target == 'good' else 1
