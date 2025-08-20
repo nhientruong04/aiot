@@ -64,7 +64,10 @@ def visualize(input_queue: queue.Queue, cap: cv2.VideoCapture,  output_dir: str,
         # Unpack the result tuple into original frame, inference results, and optional extra context
         original, infer = result
 
-        frame_with_detections = draw_detections(infer, original, labels)
+        if infer is not None:
+            frame_with_detections = draw_detections(infer, original, labels)
+        else:
+            frame_with_detections = original
 
         if fps_tracker is not None:
             fps_tracker.increment()
