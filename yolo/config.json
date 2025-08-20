@@ -1,7 +1,7 @@
 {
   "visualization_params": {
-    "score_thres": 0.25,
-    "max_boxes_to_draw": 500,
+    "score_thres": 0.35,
+    "max_boxes_to_draw": 100,
     "tracker": {
       "track_thresh": 0.1,
       "track_buffer": 30,
