@@ -129,12 +129,34 @@ def predict(image: np.array, teacher: HailoInfer, student: HailoInfer,
 
     return map_combined, map_st, map_ae
 
+# TODO: move the save_specs script to here
+# integrate threshold saving
+
+def save_specs(save_path: str, teacher: HailoInfer, student: HailoInfer, 
+               autoencoder: HailoInfer, train_loader: DataLoader) -> None:
+    if os.path.isfile(save_path):
+        raise Exception('File exists!')
+
+    teacher_mean, teacher_std = teacher_normalization(teacher, train_loader)
+    q_st_start, q_st_end, q_ae_start, q_ae_end = map_normalization(teacher, student, autoencoder,
+                                                                   teacher_mean, teacher_std, train_loader)
+
+    dir_name = os.path.dirname(save_path)
+    # some intermediate directories
+    if dir_name != '':
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+    np.savez(save_path, teacher_mean=teacher_mean, teacher_std=teacher_std,
+            q_st_start=q_st_start, q_st_end=q_st_end, q_ae_start=q_ae_start, q_ae_end=q_ae_end)
+
+
 if __name__ == "__main__":
     teacher_hef = '../models/milkpack/teacher_max.hef'
     student_hef = '../models/milkpack/student_max.hef'
     autoencoder_hef = '../models/milkpack/autoencoder_max.hef'
     train_dir = '/home/nhien/aiot/data/milkpack/train'
     test_dir = '/home/nhien/aiot/data/milkpack/test'
+    specs_path = 'specs.npz'
 
     teacher = HailoInfer(teacher_hef, input_type='UINT8', output_type='FLOAT32')
     student = HailoInfer(student_hef, input_type='UINT8', output_type='FLOAT32')
@@ -149,10 +171,13 @@ if __name__ == "__main__":
     train_set = Dataset(train_dir)
     train_loader = DataLoader(train_set, shuffle=True, resize=size)
 
-    specs_file = np.load('./specs.npz')
+    save_specs(specs_path, teacher, student, autoencoder, train_loader)
+
+    specs_file = np.load(specs_path)
     specs = {key: specs_file[key] for key in specs_file.files}
 
-    metrics = test(test_loader, teacher, student, autoencoder, test_output_dir='runs/milkpack_outputs', **specs)
+    metrics = test(test_loader, teacher, student, autoencoder, **specs)
+    np.savez(specs_path, threshold=metrics['Youden\'s J threshold'], **specs)
 
     teacher.close()
     student.close()
