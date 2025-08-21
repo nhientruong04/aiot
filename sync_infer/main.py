@@ -9,13 +9,15 @@ import queue
 from .preprocess import preprocess_from_cap
 from .postprocess import inference_result_handler
 from .visualize import visualize
+from .ad_model import ADModel
 
 import time
 import os
 from loguru import logger
 import numpy as np
 
-def main(yolo_net: str, input: str, labels: str, yolo_config: str, output_dir: str,
+def main(yolo_net: str, input: str, labels: str, yolo_config: str, teacher_hef: str,
+         student_hef: str, autoencoder_hef: str, specs_path: str, output_dir: str,
          resolution: str = 'hd', show_fps: bool = True, batch_size: int = 1) -> None:
     os.makedirs(output_dir, exist_ok=True)
 
@@ -44,9 +46,11 @@ def main(yolo_net: str, input: str, labels: str, yolo_config: str, output_dir: s
     signal = threading.Event()
 
     yolo = HailoInfer(yolo_net, batch_size)
-    model_height, model_width, _ = yolo.get_input_shape()
+    yolo_height, yolo_width, _ = yolo.get_input_shape()
 
-    signal_thread = threading.Thread(target=esp_signal, args=(1, signal, signal_thread_kill_event))
+    ad_model = ADModel(teacher_hef, student_hef, autoencoder_hef, specs_path)
+
+    signal_thread = threading.Thread(target=esp_signal, args=(0.7, signal, signal_thread_kill_event))
     visualize_thread = threading.Thread(
         target=visualize, args=(visualize_queue, cap, output_dir, labels, fps_tracker)
     )
@@ -64,16 +68,19 @@ def main(yolo_net: str, input: str, labels: str, yolo_config: str, output_dir: s
             if not ret:
                 break
 
-            processed_frame = preprocess_from_cap(frame, model_width, model_height)
+            processed_frame = preprocess_from_cap(frame, yolo_width, yolo_height)
 
             if signal.is_set():
                 output = yolo.run_sync(processed_frame)
                 processed_dets = yolo_postprocess_handler_fn(output)
 
                 extracted_objects = extract_objects(frame, processed_dets['detection_boxes'])
-                for extracted_object in extracted_objects:
-                    cv2.imwrite(os.path.join(output_dir, f"output_{image_id}.png"), extracted_object)
-                    image_id += 1
+                if len(extracted_objects) != 0:
+                    ad_outputs = ad_model.infer(extracted_objects)
+                    print(ad_outputs)
+                # for extracted_object in extracted_objects:
+                #     cv2.imwrite(os.path.join(output_dir, f"output_{image_id}.png"), extracted_object)
+                #     image_id += 1
 
                 visualize_queue.put((frame, processed_dets))
                 signal.clear()
@@ -82,6 +89,15 @@ def main(yolo_net: str, input: str, labels: str, yolo_config: str, output_dir: s
 
     except Exception as e:
         logger.error(f'Encountered error in infer pipeline: {e}.')
+        raise
+
+    finally:
+        signal_thread_kill_event.set()
+        signal_thread.join()
+        visualize_queue.put(None)
+        visualize_thread.join()
+        ad_model.close()
+        yolo.close()
 
 
     if show_fps:
@@ -89,11 +105,6 @@ def main(yolo_net: str, input: str, labels: str, yolo_config: str, output_dir: s
 
     logger.info('Inference was successful!')
 
-    signal_thread_kill_event.set()
-    signal_thread.join()
-    visualize_queue.put(None)
-    visualize_thread.join()
-    yolo.close()
 
 
 def esp_signal(duration, event: threading.Event, kill_event: threading.Event):
@@ -106,10 +117,15 @@ def esp_signal(duration, event: threading.Event, kill_event: threading.Event):
 
 
 if __name__ == '__main__':
-    yolo_net = '/home/nhien/aiot/models/yolo/yolov10n_cubes.hef'
+    yolo_net = '../models/yolo/yolov10n_cubes.hef'
     # input = '/home/nhien/aiot/data/croissant.mp4'
     input = '/home/nhien/Downloads/cubes.mp4'
-    labels = '/home/nhien/aiot/code/common/agnostic.txt'
+    labels = '../common/agnostic.txt'
     yolo_config = '/home/nhien/aiot/code/sync_infer/config.json'
-    output_dir = './output'
-    main(yolo_net, input, labels, yolo_config, output_dir)
+    teacher_hef = '../models/milkpack/teacher_max.hef'
+    student_hef = '../models/milkpack/student_max.hef'
+    autoencoder_hef = '../models/milkpack/autoencoder_max.hef'
+    specs_path = 'specs.npz'
+    output_dir = 'output'
+    main(yolo_net, input, labels, yolo_config, teacher_hef,
+         student_hef, autoencoder_hef, specs_path, output_dir)

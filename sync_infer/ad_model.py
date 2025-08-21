@@ -51,6 +51,8 @@ class ADModel:
             np.ndarray: Square image of shape (target_size, target_size, C).
         """
         print(img.shape)
+        # NOTE: sync this with the yolo pipeline or add the conversion layer to model script
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         h, w, c = img.shape
         max_dim = max(h, w)
 
