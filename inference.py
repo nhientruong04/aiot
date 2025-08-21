@@ -111,14 +111,14 @@ if __name__ == "__main__":
         result = student_output_queue.get()
         if result is None:
             break
-        print(result["output"])
+        print(result["output"].shape)
 
     print("Getting teacher outputs")
     while True:
         result = teacher_output_queue.get()
         if result is None:
             break
-        print(result["output"])
+        print(result["output"].shape)
 
     for worker in process_pool:
         print(f"Terminating {worker.name}")

@@ -1,4 +1,5 @@
 import numpy as np
+import os
 from multiprocessing import Queue
 from tqdm import tqdm
 from typing import List
@@ -7,6 +8,7 @@ from typing import Optional, Tuple
 from dataset import Dataset, DataLoader
 from PIL import Image
 from utils import AD_Evaluation
+import tifffile
 
 
 def test(test_loader: DataLoader, teacher: HailoInfer, student: HailoInfer, autoencoder: HailoInfer,
@@ -36,7 +38,6 @@ def test(test_loader: DataLoader, teacher: HailoInfer, student: HailoInfer, auto
                 os.makedirs(os.path.join(test_output_dir, target))
             file = os.path.join(
                 test_output_dir, target, img_nm + '.tiff')
-            # BUG: no tiffile defined
             tifffile.imwrite(file, map_combined)
 
         y_true_image = 0 if target == 'good' else 1
@@ -129,16 +130,18 @@ def predict(image: np.array, teacher: HailoInfer, student: HailoInfer,
     return map_combined, map_st, map_ae
 
 if __name__ == "__main__":
-    teacher_hef = '../models/orig_bottle/teacher.hef'
-    student_hef = '../models/orig_bottle/student.hef'
-    autoencoder_hef = '../models/orig_bottle/autoencoder.hef'
-    test_dir = '/home/nhien/aiot/data/bottle/test'
-    train_dir = '/home/nhien/aiot/data/bottle/train'
-    size = (256, 256)
+    teacher_hef = '../models/milkpack/teacher_max.hef'
+    student_hef = '../models/milkpack/student_max.hef'
+    autoencoder_hef = '../models/milkpack/autoencoder_max.hef'
+    train_dir = '/home/nhien/aiot/data/milkpack/train'
+    test_dir = '/home/nhien/aiot/data/milkpack/test'
 
     teacher = HailoInfer(teacher_hef, input_type='UINT8', output_type='FLOAT32')
     student = HailoInfer(student_hef, input_type='UINT8', output_type='FLOAT32')
     autoencoder = HailoInfer(autoencoder_hef, input_type='UINT8', output_type='FLOAT32')
+
+    model_height, model_width, _ = student.get_input_shape()
+    size = (model_height, model_width)
 
     test_set = Dataset(test_dir)
     test_loader = DataLoader(test_set, shuffle=True, resize=size)
@@ -146,13 +149,10 @@ if __name__ == "__main__":
     train_set = Dataset(train_dir)
     train_loader = DataLoader(train_set, shuffle=True, resize=size)
 
-    # teacher_mean, teacher_std = teacher_normalization(teacher, train_loader)
-    # q_st_start, q_st_end, q_ae_start, q_ae_end = map_normalization(teacher, student, autoencoder,
-    #                                                                teacher_mean, teacher_std, train_loader)
-    specs_file = np.load('../models/orig_bottle/specs.npz')
+    specs_file = np.load('./specs.npz')
     specs = {key: specs_file[key] for key in specs_file.files}
 
-    metrics = test(test_loader, teacher, student, autoencoder, plot_dir='test', **specs)
+    metrics = test(test_loader, teacher, student, autoencoder, test_output_dir='runs/milkpack_outputs', **specs)
 
     teacher.close()
     student.close()
